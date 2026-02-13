@@ -12,7 +12,7 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 MODEL = "gpt-5.2"
 
-BASE = r"C:\Users\MayaD\Desktop\rag_r"
+BASE = os.path.dirname(os.path.abspath(__file__))
 EMB_PATH = os.path.join(BASE, "embeddings.npz")
 META_PATH = os.path.join(BASE, "meta.json")
 CHUNKS_TEXT_PATH = os.path.join(BASE, "chunks.jsonl")
