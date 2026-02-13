@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+    "chunks_path": "C:\\Users\\MayaD\\Desktop\\rag_r\\chunks.jsonl",
+    "count": 20
+  },
+  "chunks": [
+    {
+      "doc_name": "Punch и shave-биопсия.docx",
+      "chunk_id": 0
+    },
+    {
+      "doc_name": "Punch и shave-биопсия.docx",
+      "chunk_id": 1
+    },
+    {
+      "doc_name": "Punch и shave-биопсия.docx",
+      "chunk_id": 2
+    },
+    {
+      "doc_name": "Punch и shave-биопсия.docx",
+      "chunk_id": 3
+    },
+    {
+      "doc_name": "Punch и shave-биопсия.docx",
+      "chunk_id": 4
+    },
+    {
+      "doc_name": "Punch и shave-биопсия.docx",
+      "chunk_id": 5
+    },
+    {
+      "doc_name": "Внутривенная седация.docx",
+      "chunk_id": 0
+    },
+    {
+      "doc_name": "Внутривенная седация.docx",
+      "chunk_id": 1
+    },
+    {
+      "doc_name": "Внутривенная седация.docx",
+      "chunk_id": 2
+    },
+    {
+      "doc_name": "УЗИ ОБП и трУЗИ подготовка.docx",
+      "chunk_id": 0
+    },
+    {
+      "doc_name": "УЗИ ОБП и трУЗИ подготовка.docx",
+      "chunk_id": 1
+    },
+    {
+      "doc_name": "перечень анализов для операции.docx",
+      "chunk_id": 0
+    },
+    {
+      "doc_name": "перечень анализов для операции.docx",
+      "chunk_id": 1
+    },
+    {
+      "doc_name": "почему_я_должен_платить_за_консультацию.docx",
+      "chunk_id": 0
+    },
+    {
+      "doc_name": "приветствие.docx",
+      "chunk_id": 0
+    },
+    {
+      "doc_name": "скрипт_окончания_беседы_соцсети_вайбер.docx",
+      "chunk_id": 0
+    },
+    {
+      "doc_name": "скрипты_админам_инъекции_и_коррекция_фигуры.docx",
+      "chunk_id": 0
+    },
+    {
+      "doc_name": "скрипты_админам_инъекции_и_коррекция_фигуры.docx",
+      "chunk_id": 1
+    },
+    {
+      "doc_name": "скрипты_админам_инъекции_и_коррекция_фигуры.docx",
+      "chunk_id": 2
+    },
+    {
+      "doc_name": "цифровая_дерматоскопия_фотофайндер.docx",
+      "chunk_id": 0
+    }
+  ]
+}

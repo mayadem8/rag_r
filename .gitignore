@@ -1,0 +1,20 @@
+# env / secrets
+.env
+*.env
+
+# local data
+data/
+
+# python cache
+__pycache__/
+*.pyc
+
+# files you don't want on GitHub
+requirements.txt
+01_chunk_docs.py
+02_embed_chunks.py
+answer.py
+
+# optional: common local stuff
+.DS_Store
+.vscode/
