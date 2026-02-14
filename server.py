@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -22,34 +23,65 @@ MIN_SCORE = 0.45
 
 app = FastAPI()
 
-print("Loading RAG system...")
+# ---- globals filled after startup ----
+READY = False
+LOAD_ERROR = None
+meta = None
+emb = None
+texts = None
+st_model = None
+client = None
 
-# ---------- Load everything ONCE ----------
-with open(META_PATH, "r", encoding="utf-8") as f:
-    meta = json.load(f)
 
-emb = np.load(EMB_PATH)["embeddings"]
-chunks_meta = meta["chunks"]
-model_name = meta["meta"]["model_name"]
+def load_rag():
+    global READY, LOAD_ERROR, meta, emb, texts, st_model, client
+    try:
+        print("Loading RAG system...", flush=True)
 
-texts = []
-with open(CHUNKS_TEXT_PATH, "r", encoding="utf-8") as f:
-    for line in f:
-        texts.append(json.loads(line)["text"])
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY is not set in Render environment variables.")
 
-st_model = SentenceTransformer(model_name)
-if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY is not set. Add it to .env or environment variables.")
-client = OpenAI(api_key=OPENAI_API_KEY)
+        # Helpful logs (keep for now)
+        print("BASE:", BASE, flush=True)
+        print("FILES:", os.listdir(BASE), flush=True)
 
-print("✅ Model loaded. Server ready.")
+        with open(META_PATH, "r", encoding="utf-8") as f:
+            meta = json.load(f)
 
-# ---------- Request schema ----------
+        emb = np.load(EMB_PATH)["embeddings"]
+        model_name = meta["meta"]["model_name"]
+
+        texts = []
+        with open(CHUNKS_TEXT_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                texts.append(json.loads(line)["text"])
+
+        st_model = SentenceTransformer(model_name)
+        client = OpenAI(api_key=OPENAI_API_KEY)
+
+        READY = True
+        print("✅ Model loaded. Server ready.", flush=True)
+
+    except Exception as e:
+        LOAD_ERROR = str(e)
+        print("❌ Load failed:", LOAD_ERROR, flush=True)
+
+
+@app.on_event("startup")
+def startup():
+    # Load heavy stuff without blocking port binding
+    threading.Thread(target=load_rag, daemon=True).start()
+
+
+@app.get("/health")
+def health():
+    return {"ready": READY, "error": LOAD_ERROR}
+
+
 class Question(BaseModel):
     question: str
 
 
-# ---------- Retrieval ----------
 def retrieve(query: str):
     qv = st_model.encode([query]).astype(np.float32)
     qv = qv / (np.linalg.norm(qv, axis=1, keepdims=True) + 1e-12)
@@ -68,7 +100,6 @@ def retrieve(query: str):
     return picked
 
 
-# ---------- GPT ----------
 def ask_gpt(question, chunks):
     context = "\n\n".join(chunks)
 
@@ -89,19 +120,17 @@ def ask_gpt(question, chunks):
     return resp.output_text.strip()
 
 
-# ---------- Endpoint ----------
 @app.post("/ask")
 def ask(q: Question):
+    if LOAD_ERROR:
+        raise HTTPException(status_code=500, detail=f"Startup load failed: {LOAD_ERROR}")
+    if not READY:
+        raise HTTPException(status_code=503, detail="Model is still loading. Try again in ~30-90s.")
+
     try:
         chunks = retrieve(q.question)
-
         if not chunks:
             return {"answer": "No information found."}
-
-        answer = ask_gpt(q.question, chunks)
-        return {"answer": answer}
+        return {"answer": ask_gpt(q.question, chunks)}
     except Exception as err:
-        print(f"/ask failed: {err}")
         raise HTTPException(status_code=500, detail=str(err))
-
-
