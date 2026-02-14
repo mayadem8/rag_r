@@ -1,11 +1,9 @@
-import json
 import os
+import json
 import threading
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
-from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,7 +21,7 @@ MIN_SCORE = 0.45
 
 app = FastAPI()
 
-# ---- globals filled after startup ----
+# ---- globals loaded later ----
 READY = False
 LOAD_ERROR = None
 meta = None
@@ -32,18 +30,28 @@ texts = None
 st_model = None
 client = None
 
+@app.get("/")
+def root():
+    # This makes port detection instant
+    return {"status": "ok", "ready": READY, "error": LOAD_ERROR}
+
+@app.get("/health")
+def health():
+    return {"ready": READY, "error": LOAD_ERROR}
 
 def load_rag():
     global READY, LOAD_ERROR, meta, emb, texts, st_model, client
     try:
         print("Loading RAG system...", flush=True)
-
-        if not OPENAI_API_KEY:
-            raise RuntimeError("OPENAI_API_KEY is not set in Render environment variables.")
-
-        # Helpful logs (keep for now)
         print("BASE:", BASE, flush=True)
         print("FILES:", os.listdir(BASE), flush=True)
+
+        if not os.path.exists(META_PATH):
+            raise RuntimeError(f"meta.json not found at {META_PATH}")
+        if not os.path.exists(EMB_PATH):
+            raise RuntimeError(f"embeddings.npz not found at {EMB_PATH}")
+        if not os.path.exists(CHUNKS_TEXT_PATH):
+            raise RuntimeError(f"chunks.jsonl not found at {CHUNKS_TEXT_PATH}")
 
         with open(META_PATH, "r", encoding="utf-8") as f:
             meta = json.load(f)
@@ -56,6 +64,13 @@ def load_rag():
             for line in f:
                 texts.append(json.loads(line)["text"])
 
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY is missing in Render env vars")
+
+        # Heavy imports only inside loader (NOT at import time)
+        from sentence_transformers import SentenceTransformer
+        from openai import OpenAI
+
         st_model = SentenceTransformer(model_name)
         client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -66,21 +81,12 @@ def load_rag():
         LOAD_ERROR = str(e)
         print("❌ Load failed:", LOAD_ERROR, flush=True)
 
-
 @app.on_event("startup")
 def startup():
-    # Load heavy stuff without blocking port binding
     threading.Thread(target=load_rag, daemon=True).start()
-
-
-@app.get("/health")
-def health():
-    return {"ready": READY, "error": LOAD_ERROR}
-
 
 class Question(BaseModel):
     question: str
-
 
 def retrieve(query: str):
     qv = st_model.encode([query]).astype(np.float32)
@@ -99,7 +105,6 @@ def retrieve(query: str):
             break
     return picked
 
-
 def ask_gpt(question, chunks):
     context = "\n\n".join(chunks)
 
@@ -116,21 +121,17 @@ def ask_gpt(question, chunks):
         input=f"CONTEXT:\n{context}\n\nQUESTION: {question}",
         max_output_tokens=200,
     )
-
     return resp.output_text.strip()
-
 
 @app.post("/ask")
 def ask(q: Question):
     if LOAD_ERROR:
         raise HTTPException(status_code=500, detail=f"Startup load failed: {LOAD_ERROR}")
     if not READY:
-        raise HTTPException(status_code=503, detail="Model is still loading. Try again in ~30-90s.")
+        raise HTTPException(status_code=503, detail="Model is still loading. Try again in a moment.")
 
-    try:
-        chunks = retrieve(q.question)
-        if not chunks:
-            return {"answer": "No information found."}
-        return {"answer": ask_gpt(q.question, chunks)}
-    except Exception as err:
-        raise HTTPException(status_code=500, detail=str(err))
+    chunks = retrieve(q.question)
+    if not chunks:
+        return {"answer": "No information found."}
+
+    return {"answer": ask_gpt(q.question, chunks)}
