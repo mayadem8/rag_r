@@ -9,7 +9,7 @@ function App() {
 
   // Backend base URL (set this in Vercel as VITE_API_URL)
   // Example value: https://rag-r.onrender.com
-  const API = import.meta.env.VITE_API_URL || 'https://rag-r.onrender.com'
+  const API = "https://rag-r.onrender.com"
 
   const askQuestion = async () => {
     const trimmed = question.trim()
