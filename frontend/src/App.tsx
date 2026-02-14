@@ -7,6 +7,10 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // Backend base URL (set this in Vercel as VITE_API_URL)
+  // Example value: https://rag-r.onrender.com
+  const API = import.meta.env.VITE_API_URL || 'https://rag-r.onrender.com'
+
   const askQuestion = async () => {
     const trimmed = question.trim()
     if (!trimmed || loading) return
@@ -16,7 +20,7 @@ function App() {
     setAnswer('')
 
     try {
-      const res = await fetch('/ask', {
+      const res = await fetch(`${API}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: trimmed }),
@@ -26,7 +30,7 @@ function App() {
         let detail = ''
         try {
           const data = await res.clone().json()
-          detail = data?.detail ?? ''
+          detail = (data as any)?.detail ?? ''
         } catch {
           try {
             detail = await res.text()
@@ -51,7 +55,7 @@ function App() {
     }
   }
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     void askQuestion()
   }
