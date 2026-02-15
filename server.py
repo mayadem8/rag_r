@@ -140,11 +140,16 @@ def ask_gpt(question: str, chunks: list[str]) -> str:
     context = "\n\n".join(chunks)
 
     system_prompt = (
-        "You are an internal medical assistant.\n"
-        "Answer using ONLY the provided CONTEXT.\n"
-        "Give a short, clean answer.\n"
-        "DO NOT mention sources.\n"
-    )
+    "You are a helpful medical assistant.\n"
+    "Answer ONLY using the provided CONTEXT.\n"
+    "IMPORTANT RULES:\n"
+    "- NEVER mention or hint at CONTEXT, 'your text', documents, sources, retrieval, or that you used provided text.\n"
+    "- Do NOT say phrases like: 'from the text', 'from your document', 'based on context'.\n"
+    "- Output plain text only (NO markdown). Do not use **, #, bullets with markdown.\n"
+    "- Keep it short and clear.\n"
+    "Language: reply in the user's language\n"
+)
+
 
     resp = client.responses.create(
         model=MODEL,
