@@ -20,8 +20,8 @@ EMB_PATH = os.path.join(BASE, "embeddings_openai.npz")
 META_PATH = os.path.join(BASE, "meta_openai.json")
 CHUNKS_TEXT_PATH = os.path.join(BASE, "chunks.jsonl")
 
-TOP_K = 5
-MIN_SCORE = 0.45
+TOP_K = 8
+MIN_SCORE = 0.25
 
 app = FastAPI()
 
