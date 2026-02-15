@@ -1,34 +1,38 @@
-import os
 import json
+import os
 import threading
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-MODEL = "gpt-5.2"
+MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
+EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-EMB_PATH = os.path.join(BASE, "embeddings.npz")
-META_PATH = os.path.join(BASE, "meta.json")
+
+# ✅ Use the new OpenAI-embedded files
+EMB_PATH = os.path.join(BASE, "embeddings_openai.npz")
+META_PATH = os.path.join(BASE, "meta_openai.json")
 CHUNKS_TEXT_PATH = os.path.join(BASE, "chunks.jsonl")
 
 TOP_K = 5
 MIN_SCORE = 0.45
 
-
-
 app = FastAPI()
 
+# ---- CORS (so Vercel can call Render) ----
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://rag-r.vercel.app",
+        "https://rag-cgyabkpay-mayas-projects-549f9e33.vercel.app",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
@@ -37,78 +41,87 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ---- globals loaded later ----
+# ---- globals loaded after startup ----
 READY = False
 LOAD_ERROR = None
-meta = None
 emb = None
 texts = None
-st_model = None
 client = None
+
+
+def _l2_normalize(mat: np.ndarray) -> np.ndarray:
+    return mat / (np.linalg.norm(mat, axis=1, keepdims=True) + 1e-12)
+
 
 @app.get("/")
 def root():
-    # This makes port detection instant
     return {"status": "ok", "ready": READY, "error": LOAD_ERROR}
+
 
 @app.get("/health")
 def health():
     return {"ready": READY, "error": LOAD_ERROR}
 
+
 def load_rag():
-    global READY, LOAD_ERROR, meta, emb, texts, st_model, client
+    global READY, LOAD_ERROR, emb, texts, client
     try:
-        print("Loading RAG system...", flush=True)
-        print("BASE:", BASE, flush=True)
-        print("FILES:", os.listdir(BASE), flush=True)
+        print("Loading RAG system (OpenAI embeddings)...", flush=True)
 
-        if not os.path.exists(META_PATH):
-            raise RuntimeError(f"meta.json not found at {META_PATH}")
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY is missing in Render environment variables.")
+
         if not os.path.exists(EMB_PATH):
-            raise RuntimeError(f"embeddings.npz not found at {EMB_PATH}")
+            raise RuntimeError(f"Missing embeddings file: {EMB_PATH}")
+        if not os.path.exists(META_PATH):
+            raise RuntimeError(f"Missing meta file: {META_PATH}")
         if not os.path.exists(CHUNKS_TEXT_PATH):
-            raise RuntimeError(f"chunks.jsonl not found at {CHUNKS_TEXT_PATH}")
+            raise RuntimeError(f"Missing chunks file: {CHUNKS_TEXT_PATH}")
 
-        with open(META_PATH, "r", encoding="utf-8") as f:
-            meta = json.load(f)
+        # Load and normalize embeddings once
+        emb_raw = np.load(EMB_PATH)["embeddings"].astype(np.float32)
+        emb = _l2_normalize(emb_raw)
 
-        emb = np.load(EMB_PATH)["embeddings"]
-        model_name = meta["meta"]["model_name"]
-
+        # Load texts
         texts = []
         with open(CHUNKS_TEXT_PATH, "r", encoding="utf-8") as f:
             for line in f:
                 texts.append(json.loads(line)["text"])
 
-        if not OPENAI_API_KEY:
-            raise RuntimeError("OPENAI_API_KEY is missing in Render env vars")
+        # Optional: verify embed model matches meta
+        with open(META_PATH, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        meta_model = meta.get("meta", {}).get("model_name", "")
+        if meta_model and meta_model != EMBED_MODEL:
+            print(f"⚠️ meta_openai.json model_name={meta_model} but OPENAI_EMBED_MODEL={EMBED_MODEL}", flush=True)
 
-        # Heavy imports only inside loader (NOT at import time)
-        from sentence_transformers import SentenceTransformer
-        from openai import OpenAI
-
-        st_model = SentenceTransformer(model_name)
         client = OpenAI(api_key=OPENAI_API_KEY)
 
         READY = True
-        print("✅ Model loaded. Server ready.", flush=True)
+        print("✅ Server ready.", flush=True)
 
     except Exception as e:
         LOAD_ERROR = str(e)
         print("❌ Load failed:", LOAD_ERROR, flush=True)
 
+
 @app.on_event("startup")
 def startup():
     threading.Thread(target=load_rag, daemon=True).start()
 
+
 class Question(BaseModel):
     question: str
 
-def retrieve(query: str):
-    qv = st_model.encode([query]).astype(np.float32)
-    qv = qv / (np.linalg.norm(qv, axis=1, keepdims=True) + 1e-12)
 
+def embed_query(text: str) -> np.ndarray:
+    r = client.embeddings.create(model=EMBED_MODEL, input=text)
+    vec = np.array([r.data[0].embedding], dtype=np.float32)
+    return _l2_normalize(vec)
+
+
+def retrieve(query: str):
+    qv = embed_query(query)  # (1, d)
     scores = (emb @ qv.T).reshape(-1)
     order = np.argsort(-scores)
 
@@ -122,7 +135,8 @@ def retrieve(query: str):
             break
     return picked
 
-def ask_gpt(question, chunks):
+
+def ask_gpt(question: str, chunks: list[str]) -> str:
     context = "\n\n".join(chunks)
 
     system_prompt = (
@@ -140,12 +154,13 @@ def ask_gpt(question, chunks):
     )
     return resp.output_text.strip()
 
+
 @app.post("/ask")
 def ask(q: Question):
     if LOAD_ERROR:
         raise HTTPException(status_code=500, detail=f"Startup load failed: {LOAD_ERROR}")
     if not READY:
-        raise HTTPException(status_code=503, detail="Model is still loading. Try again in a moment.")
+        raise HTTPException(status_code=503, detail="Server is waking up. Try again in a moment.")
 
     chunks = retrieve(q.question)
     if not chunks:

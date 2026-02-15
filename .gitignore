@@ -10,7 +10,6 @@ __pycache__/
 *.pyc
 
 # files you don't want on GitHub
-requirements.txt
 01_chunk_docs.py
 02_embed_chunks.py
 answer.py
